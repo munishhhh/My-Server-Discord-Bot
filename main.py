@@ -8,6 +8,7 @@ from datetime import timedelta, datetime
 import os, asyncio, json, random
 from dotenv import load_dotenv
 from keep_alive import keep_alive
+
 # --- Bot Setup ---
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
@@ -29,6 +30,8 @@ def load_credits():
         user_credits = {}
 
 # -------- ON_READY --------
+GUILD_ID = 1281988538841174026  # <<-- Change this to your test server ID
+
 @bot.event
 async def on_ready():
     global welcome_channel_id, leave_channel_id
@@ -37,9 +40,8 @@ async def on_ready():
     load_credits()  # ✅ Load credits from file
 
     try:
-        bot.tree.add_command(ticketpanel)
-        await bot.tree.sync()
-        print(f"[✅] Synced slash commands for {bot.user}")
+        await bot.tree.sync(guild=discord.Object(id=GUILD_ID))  # ✅ Sync all commands for guild
+        print(f"[✅] Synced slash commands for {bot.user} in test guild")
     except Exception as e:
         print(f"[❌] Slash command sync failed: {e}")
 
@@ -49,7 +51,7 @@ async def on_ready():
 welcome_channel_id = None
 leave_channel_id = None
 ticket_category_id = None
-welcome_image_url = "https://auto.creavite.co/api/out/xqzrBUqLQ6ilszt1c9_standard.gif"
+welcome_image_url = "."
 UPI_QR_CODE_URL = "https://cdn.discordapp.com/attachments/1367192983740354672/1400094921590837258/my_cred_upi_qr.png?ex=68a47001&is=68a31e81&hm=d92f66426ca8e2c4c699a6b8f76f29026d349838763fde6cd1d82af697e14550"
 
 voice_channel_start_times = {}
@@ -67,10 +69,6 @@ def load_channel_data():
 def save_channel_data(welcome_id, leave_id):
     with open("channel_config.json", "w") as f:
         json.dump({"welcome_channel": welcome_id, "leave_channel": leave_id}, f)
-
-from discord.utils import get
-import discord
-from datetime import datetime
 
 @bot.event
 async def on_member_join(member):
@@ -97,13 +95,8 @@ async def on_member_join(member):
             timestamp=datetime.utcnow()
         )
 
-        # Avatar at top-right
         embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
-
-        # Footer with time
         embed.set_footer(text=f"Thanks for Joining! | Joined at {join_time}")
-
-        # Add GIF image at bottom
         embed.set_image(url="https://auto.creavite.co/api/out/xqzrBUqLQ6ilszt1c9_standard.gif")
 
         await channel.send(f"**Hello** {member.mention} 👋")
@@ -145,12 +138,12 @@ async def send_qr(interaction: discord.Interaction):
     embed.set_image(url=UPI_QR_CODE_URL)
     await interaction.response.send_message(embed=embed)
 
-# =================== TICKET SYSTEM (FINAL FULL VERSION) ===================
 
-# Global tracker for ticket creators
-ticket_owners = {}  # {channel_id: user_object}
-user_credits = {}  # Stores user credits
-voice_channel_start_times = {}  # Tracks VC join time
+# =================== TICKET SYSTEM ===================
+
+ticket_owners = {}
+user_credits = {}
+voice_channel_start_times = {}
 
 @bot.tree.command(name="setticketcategory", description="Set the category for ticket channels.")
 @app_commands.describe(category="Select the category for tickets.")
@@ -212,6 +205,8 @@ class CategoryButton(discord.ui.Button):
                 color=discord.Color.greyple()
             ), view=SupportView())
 
+# =================== TICKET VIEWS ===================
+
 class AimbotView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -242,6 +237,8 @@ class SupportView(discord.ui.View):
         self.add_item(ProductButton("🛠️ Support Ticket", "support"))
         self.add_item(BackButton())
 
+# =================== BACK BUTTON ===================
+
 class BackButton(discord.ui.Button):
     def __init__(self, row=None):
         super().__init__(label="🔙 Back", style=discord.ButtonStyle.secondary, row=row)
@@ -253,6 +250,8 @@ class BackButton(discord.ui.Button):
             color=discord.Color.blurple()
         )
         await interaction.response.edit_message(embed=embed, view=CategoryView())
+
+# =================== PRODUCT BUTTON ===================
 
 class ProductButton(discord.ui.Button):
     def __init__(self, label, custom_id, row=None):
@@ -306,6 +305,8 @@ class ProductButton(discord.ui.Button):
 
         await interaction.followup.send(f"✅ Ticket created: {channel.mention}", ephemeral=True)
 
+# =================== PLAN VIEW & BUTTON ===================
+
 class PlanView(discord.ui.View):
     def __init__(self, product, user):
         super().__init__(timeout=None)
@@ -328,14 +329,13 @@ class PlanButton(discord.ui.Button):
 
         embed = discord.Embed(
             title="✅ Plan Selected",
-            description=f"**Product:** `{self.product}`\n**Plan:** `{self.plan}`\n**User:** {self.user.mention}\n\n📢 @Brothers will assist you shortly.",
+            description=f"**Product:** {self.product}\n**Plan:** {self.plan}\n**User:** {self.user.mention}\n\n📢 @Brothers will assist you shortly.",
             color=discord.Color.green()
         )
         await interaction.channel.send(embed=embed)
-        await interaction.response.send_message(
-            f"✅ You selected: **{self.plan}** for **{self.product}**.",
-            ephemeral=True
-        )
+        await interaction.response.send_message(f"✅ You selected: **{self.plan}** for **{self.product}**.", ephemeral=True)
+
+# =================== CLOSE TICKET BUTTON & VIEW ===================
 
 class CloseTicketButton(discord.ui.Button):
     def __init__(self):
@@ -350,14 +350,13 @@ class CloseTicketView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(CloseTicketButton())
-
-#======= TICKET REPLY NOTIFICATION ===================
+        
+# =================== TICKET REPLY NOTIFICATION ===================
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
 
-    # Notify ticket owner on reply
     if message.channel.id in ticket_owners:
         owner = ticket_owners[message.channel.id]
         if message.author != owner:
@@ -368,7 +367,6 @@ async def on_message(message):
             except discord.Forbidden:
                 pass
 
-    # ✅ Credits system (add this block)
     uid = message.author.id
     user_credits[uid] = user_credits.get(uid, 0) + random.randint(1, 5)
     save_credits()
@@ -390,7 +388,7 @@ async def on_voice_state_update(member, before, after):
 
             if credits_earned > 0:
                 user_credits[member.id] = user_credits.get(member.id, 0) + credits_earned
-                save_credits()  # ✅ save yaha bhi kar le
+                save_credits()
                 try:
                     await member.send(
                         f"🎉 You've earned **{credits_earned}** credits for spending **{int(time_spent // 60)} minutes** in a voice channel!"
@@ -400,6 +398,7 @@ async def on_voice_state_update(member, before, after):
 
         if after.channel:
             voice_channel_start_times[member.id] = datetime.utcnow()   
+
 # =================== CREDITS COMMAND ===================
 @bot.command()
 async def credits(ctx):
@@ -409,29 +408,20 @@ async def credits(ctx):
 
 @bot.command()
 async def leaderboard(ctx):
-    # Assuming user_credits is a dictionary where keys are user_ids and values are credits
     sorted_users = sorted(user_credits.items(), key=lambda x: x[1], reverse=True)
-
-    # Get top 10 users
     top_10 = sorted_users[:10]
-
-    # Build the leaderboard message
     leaderboard_message = "**Top 10 Users with the Most Credits:**\n\n"
     for idx, (user_id, credits) in enumerate(top_10, 1):
         user = ctx.guild.get_member(user_id)
         username = user.name if user else "Unknown"
         leaderboard_message += f"{idx}. {username} - {credits} credits\n"
-
-    # Create the embed
     embed = discord.Embed(
         description=leaderboard_message,
         color=discord.Color.red(),
         timestamp=datetime.utcnow()
     )
-
-    # Send the embed
     await ctx.send(embed=embed)
-   
+
 # =================== AUTO ROLE BASED ON CREDITS ===================
 async def check_auto_roles(user):
     credits = user_credits.get(user.id, 0)
@@ -453,6 +443,285 @@ async def check_auto_roles(user):
                 except discord.Forbidden:
                     pass
 
+# =================== REQUIREMENTS PANEL (DROPDOWN STYLE) ===================
+@bot.tree.command(name="requirements", description="Open the system requirements panel.")
+@app_commands.guilds(discord.Object(id=GUILD_ID))
+async def requirements(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="📋 Requirements Panel",
+        description="Select the requirement you want to download from the dropdown below.",
+        color=discord.Color.blurple()
+    )
+    embed.set_footer(text="Brothers Army | Requirements Center")
+    view = RequirementsDropdownView()
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
+
+class RequirementsDropdownView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(RequirementsDropdown())
+
+class RequirementsDropdown(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(
+                label="🧩 DirectX & Visual C++",
+                description="Required for Free Fire panel to work properly.",
+                value="directx"
+            ),
+            discord.SelectOption(
+                label="💻 .NET Framework 4.8 / 8",
+                description="Required for Free Fire panel to work properly.",
+                value="dotnet"
+            ),
+            discord.SelectOption(
+                label="🧠 Disable Hyper-V",
+                description="Required for Free Fire panel to work properly.",
+                value="hyperv"
+            ),
+            discord.SelectOption(
+                label="🛡 Windows Defender Fix",
+                description="Required for Free Fire panel to work properly.",
+                value="defender"
+            )
+        ]
+        super().__init__(
+            placeholder="📋 Choose a requirement to download...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        selection = self.values[0]
+        links = {
+            "directx": "https://cdn.discordapp.com/attachments/1304025484769628170/1305560640802521158/Requerimientos_1.rar?ex=68f1bd58&is=68f06bd8&hm=79149732caadc4b49ceb1120687f1fda05c54a0125b41c0eda2b63627b20a4d3",
+            "dotnet": "https://example.com/dotnet-placeholder",
+            "hyperv": "https://cdn.discordapp.com/attachments/1304025484769628170/1427414446979940372/HD-DisableHyperV_native_v2.exe?ex=68f2128c&is=68f0c10c&hm=f66d9466590c74f66bac6cc66d4487852d4b23aa75ac7c2eab724d3326f21e92",
+            "defender": "https://cdn.discordapp.com/attachments/1258024547878441071/1262949258953228328/Antivirus_Fix.zip?ex=68f1a0a7&is=68f04f27&hm=ebbe6f1ef8f21677ac108a3f7acf4073ccc5961a8a30871f04f3"
+        }
+
+        titles = {
+            "directx": "🧩 DirectX & Visual C++",
+            "dotnet": "💻 .NET Framework 4.8 / 8",
+            "hyperv": "🧠 Disable Hyper-V",
+            "defender": "🛡 Windows Defender Fix"
+        }
+
+        title = titles.get(selection, "Requirement")
+        link = links.get(selection, "Link not available")
+
+        embed = discord.Embed(
+            title=title,
+            description=f"This is required for Free Fire panel to work properly.\n\nClick the button below to download:",
+            color=discord.Color.green(),
+            timestamp=datetime.utcnow()
+        )
+        embed.set_footer(text="Brothers Army | Requirements Downloader")
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="Click Here to Download", url=link, style=discord.ButtonStyle.link))
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+# =================== NEW FREE FIRE APK PANEL ===================
+@bot.tree.command(name="freefireapk", description="Download Free Fire APKs from the dropdown.")
+@app_commands.guilds(discord.Object(id=GUILD_ID))
+async def freefireapk(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="📥 Free Fire APK Panel",
+        description="Choose which Free Fire APK you want to download from the dropdown below.",
+        color=discord.Color.blurple()
+    )
+    embed.set_footer(text="Brothers Army | Free Fire APK Downloader")
+    view = FreeFireDropdownView()
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
+
+class FreeFireDropdownView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(FreeFireDropdown())
+
+class FreeFireDropdown(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(
+                label="🔥 Free Fire Amazon APK",
+                description="Download the Free Fire Amazon APK.",
+                value="amazon"
+            ),
+            discord.SelectOption(
+                label="🎯 Free Fire Combo APK",
+                description="Download the Free Fire Combo APK.",
+                value="combo"
+            ),
+            discord.SelectOption(
+                label="🌍 Free Fire Global APK",
+                description="Download the Free Fire Global APK.",
+                value="global"
+            )
+        ]
+        super().__init__(
+            placeholder="📋 Choose the Free Fire APK...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        selection = self.values[0]
+        links = {
+            "amazon": "https://cdn.discordapp.com/attachments/1370143048062734336/1428346041006166167/FF_OB50.xapk?ex=68f22a69&is=68f0d8e9&hm=17616561db1d01eaf29d17c583d51820a757c7b8caf9e4de47ca20da3495e68b&", 
+            "combo": "https://cdn.discordapp.com/attachments/1392480174104383623/1400092321520816200/Garena_Free_Fire_1.114.1_apkcombo.com.xapk?ex=68f18d55&is=68f03bd5&hm=a374f1a86daa54fc37568a46db15d2b80066df05d5dba7cf8e436f880676e522",
+            "global": "https://cdn.discordapp.com/attachments/1370143048062734336/1428344985962418196/FreeFireGlobalApk.zip?ex=68f2296e&is=68f0d7ee&hm=dfa1d69015b9da2f095faac79d65f453f1621114a6dc665c507fc4dc23bf14fc&" 
+        }
+
+        titles = {
+            "amazon": "🔥 Free Fire Amazon APK",
+            "combo": "🎯 Free Fire Combo APK",
+            "global": "🌍 Free Fire Global APK"
+        }
+
+        title = titles.get(selection, "Free Fire APK")
+        link = links.get(selection, "Link not available")
+
+        embed = discord.Embed(
+            title=title,
+            description=f"Click the button below to download your selected Free Fire APK:",
+            color=discord.Color.green(),
+            timestamp=datetime.utcnow()
+        )
+        embed.set_footer(text="Brothers Army | Free Fire Downloader")
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="Click Here to Download", url=link, style=discord.ButtonStyle.link))
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        
+# =================== EMULATOR PANEL ===================
+@bot.tree.command(name="emulators", description="Open the emulator download panel.")
+@app_commands.guilds(discord.Object(id=GUILD_ID))
+async def emulators(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="🖥 Emulator Panel",
+        description="Select the emulator you want to download:",
+        color=discord.Color.blurple()
+    )
+    view = EmulatorChoiceView()
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
+
+# -------- Page 1 Buttons --------
+class EmulatorChoiceView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(EmulatorButton("Bluestacks", "bluestacks"))
+        self.add_item(EmulatorButton("MSI", "msi"))
+
+class EmulatorButton(discord.ui.Button):
+    def __init__(self, label, custom_id):
+        super().__init__(label=label, style=discord.ButtonStyle.primary, custom_id=custom_id)
+
+    async def callback(self, interaction: discord.Interaction):
+        emulator = self.custom_id
+        if emulator == "bluestacks":
+            await interaction.response.edit_message(
+                embed=discord.Embed(
+                    title="📋 Bluestacks Versions",
+                    description="Choose which Bluestacks version you want to download:",
+                    color=discord.Color.green()
+                ),
+                view=BluestacksDropdownView()
+            )
+        elif emulator == "msi":
+            await interaction.response.edit_message(
+                embed=discord.Embed(
+                    title="📋 MSI Versions",
+                    description="Choose which MSI emulator version you want to download:",
+                    color=discord.Color.green()
+                ),
+                view=MSIDropdownView()
+            )
+
+# -------- Back Button --------
+class BackToEmulatorChoiceButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="🔙 Back", style=discord.ButtonStyle.secondary)
+
+    async def callback(self, interaction: discord.Interaction):
+        embed = discord.Embed(
+            title="🖥 Emulator Panel",
+            description="Select the emulator you want to download:",
+            color=discord.Color.blurple()
+        )
+        await interaction.response.edit_message(embed=embed, view=EmulatorChoiceView())
+
+# -------- Bluestacks Dropdown --------
+class BluestacksDropdownView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(BluestacksDropdown())
+        self.add_item(BackToEmulatorChoiceButton())
+
+class BluestacksDropdown(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label="Bluestacks 5.22", description="Download Bluestacks 5.22 installer", value="bs522"),
+            discord.SelectOption(label="Bluestacks 5.14", description="Download Bluestacks 5.14 installer", value="bs514"),
+            discord.SelectOption(label="Bluestacks 5.12", description="Download Bluestacks 5.12 installer", value="bs512"),
+            discord.SelectOption(label="Bluestacks 5.9", description="Download Bluestacks 5.9 installer", value="bs59"),
+            discord.SelectOption(label="Bluestacks 4", description="Download Bluestacks 4 installer", value="bs4")
+        ]
+        super().__init__(placeholder="📋 Choose Bluestacks version...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        links = {
+            "bs522": "https://cdn.discordapp.com/attachments/1370143048062734336/1428348113621356655/BlueStacksInstaller_5.22.125.1001_native_f7ab1781dac28810aa6baa4242803436_MzsxNQ.exe?ex=68f22c57&is=68f0dad7&hm=2ed23cf11ca7a918318ae4fdae0fb98e2238daa180b24e132ad79b95f9846476&",
+            "bs514": "https://cdn.discordapp.com/attachments/1370143048062734336/1428349404732981269/BlueStacks_App_Player_v5.14.10.exe?ex=68f22d8b&is=68f0dc0b&hm=07b17131d2301aae7da3a7bec9f1d6f8ea41e25906a445399301c87bad70962c&",
+            "bs512": "https://cdn.discordapp.com/attachments/1370143048062734336/1428349519749316618/BlueStacks_App_Player_v5.12.115.exe?ex=68f22da6&is=68f0dc26&hm=38d90695fa8381ee736c589790b4edfff307bf65217189cc69bb68e862b46772&",
+            "bs59": "https://cdn.discordapp.com/attachments/1370143048062734336/1428349624103473252/BlueStacks_App_Player_v5.9.0.exe?ex=68f22dbf&is=68f0dc3f&hm=6af6900e480abd392341331eeb041413878578291def259cf419268a5fa3a306&",
+            "bs4": "https://cdn.discordapp.com/attachments/1370143048062734336/1428349679195918346/BlueStacksMicroInstaller_4.280.1.1002_native_c7e2d110d374cecd4f763f9844041184.exe?ex=68f22dcc&is=68f0dc4c&hm=47c210f6a46290ac76d5b773dd8035bc671882b68c41bd0e51064010ed6eac7b&"
+        }
+        selection = self.values[0]
+        link = links.get(selection, "Link not available")
+        embed = discord.Embed(
+            title=f"💻 {selection} Download",
+            description="Click the button below to download the emulator.",
+            color=discord.Color.green()
+        )
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="Click Here to Download", url=link, style=discord.ButtonStyle.link))
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+# -------- MSI Dropdown --------
+class MSIDropdownView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(MSIDropdown())
+        self.add_item(BackToEmulatorChoiceButton())
+
+class MSIDropdown(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label="MSI 5.22", description="Download MSI 5.22 installer", value="msi522"),
+            discord.SelectOption(label="MSI 5.12", description="Download MSI 5.12 installer", value="msi512"),
+            discord.SelectOption(label="MSI 5.9", description="Download MSI 5.9 installer", value="msi59"),
+            discord.SelectOption(label="MSI 4", description="Download MSI 4 installer", value="msi4")
+        ]
+        super().__init__(placeholder="📋 Choose MSI version...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        links = {
+            "msi522": "https://cdn.discordapp.com/attachments/1370143048062734336/1428350293254340649/BlueStacksMicroInstaller_5.22.75.6322_native.exe?ex=68f22e5f&is=68f0dcdf&hm=1406c20dd6f1f2bbd61644b004d1144e494f238fb879b48feff8359681974020&",
+            "msi512": "https://cdn.discordapp.com/attachments/1391076756051460208/1406340422594465975/MSI_5.12.exe?ex=68f1ded5&is=68f08d55&hm=952a42e48b3455805ac0e50a5c22caefc020501b906da24c229519a9ee137f32&",
+            "msi59": "https://cdn.discordapp.com/attachments/1370143048062734336/1428351932904243402/msi-app-player-5.9.300.6315-installer.exe?ex=68f22fe6&is=68f0de66&hm=002c3d943e468020932d96c014cf8ab42da57636d3e2ce93005713707a2b9db5&",
+            "msi4": "https://cdn.discordapp.com/attachments/1370143048062734336/1428352085044363354/MSI_APP_Player.exe?ex=68f2300a&is=68f0de8a&hm=438247d09429483927c42c0247e8d4e58af595ee5e538aae353da8275c065273&"
+        }
+        selection = self.values[0]
+        link = links.get(selection, "Link not available")
+        embed = discord.Embed(
+            title=f"💻 {selection} Download",
+            description="Click the button below to download the emulator.",
+            color=discord.Color.green()
+        )
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="Click Here to Download", url=link, style=discord.ButtonStyle.link))
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
 # --- Start Bot ---
-keep_alive()
 bot.run(TOKEN)
